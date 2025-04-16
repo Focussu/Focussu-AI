@@ -1,9 +1,12 @@
 fastapi
-uvicorn[standard]
-torch
-torchvision
-tqdm
 numpy
 opencv-python
-scikit-learn
 python-multipart
+scikit-learn
+tensorflow
+torch
+torchvision
+transformers
+tqdm
+uvicorn[standard]
+
