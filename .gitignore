@@ -1,4 +1,5 @@
-./data
+# Data directory
+data/
 ./data/*
 
 
