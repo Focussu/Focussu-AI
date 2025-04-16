@@ -2,17 +2,21 @@ version: '3.8'
 
 services:
   ai-backend:
-    build: .
-    container_name: ai-backend-container
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai-backend
     ports:
       - "8000:8000"
     volumes:
       - ./src:/workspace/app  # 코드 실시간 반영
       - ./data:/workspace/data  # 이미지 저장 디렉토리
+    environment:
+      - PYTHONUNBUFFERED=1
+    # GPU 필요시 주석 해제
     # deploy:
     #   resources:
     #     reservations:
     #       devices:
     #         - capabilities: [gpu]
-    # runtime: nvidia  # GPU 사용
 
