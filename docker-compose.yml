@@ -7,11 +7,12 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./app:/workspace/app  # 코드 실시간 반영
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - capabilities: [gpu]
-    runtime: nvidia  # GPU 사용
+      - ./src:/workspace/app  # 코드 실시간 반영
+      - ./data:/workspace/data  # 이미지 저장 디렉토리
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - capabilities: [gpu]
+    # runtime: nvidia  # GPU 사용
 

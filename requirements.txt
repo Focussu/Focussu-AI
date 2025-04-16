@@ -6,3 +6,4 @@ tqdm
 numpy
 opencv-python
 scikit-learn
+python-multipart
