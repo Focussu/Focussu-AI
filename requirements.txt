@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+torch
+torchvision
+tqdm
+numpy
+opencv-python
+scikit-learn
