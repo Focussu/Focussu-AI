@@ -11,9 +11,8 @@ docker-compose_gpu.yml
 
 ### Python ###
 # Byte-compiled / optimized / DLL files
-__pycache__/
+src/__pycache__/
 *.py[cod]
-*.pyc
 *$py.class
 
 # C extensions
