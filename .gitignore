@@ -1,6 +1,7 @@
 # Data directory
-data/
-./data/*
+data/*
+# .gitkeep 파일은 유지
+!data/.gitkeep
 
 docker-compose_gpu.yml
 
