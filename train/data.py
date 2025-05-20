@@ -18,17 +18,15 @@ from tqdm import tqdm
 
 
 class FocusDataset(Dataset):
-    def __init__(self, base_path, img_path, meta_path, file_list):
+    def __init__(self, base_path, file_list):
         self.base_path = base_path
-        self.img_path = img_path
-        self.meta_path = meta_path
         self.file_list = file_list
         # 데이터 파일 이름 가져오기
         self.pkl_files = []
         self.meta_files = []
         for file in file_list:
-            self.pkl_files.extend(glob.glob(f'{base_path}/{img_path}/TS_{file}*_p/*_result.pkl'))
-            self.meta_files.extend(glob.glob(f'{base_path}/{meta_path}/TL_{file}/*.json'))
+            self.pkl_files.extend(glob.glob(f'{base_path}/01.원천데이터/TS_{file}*_p/*_result.pkl'))
+            self.meta_files.extend(glob.glob(f'{base_path}/02.라벨링데이터/TL_{file}/*.json'))
         print(f'pkl_files: {len(self.pkl_files)}')
         print(f'meta_files: {len(self.meta_files)}')
        
@@ -44,9 +42,7 @@ class FocusDataset(Dataset):
                     'idx': meta_data['이미지']['timeline']['id'],
                     'category_id': meta_data['이미지']['category']['id']
                 }
-        # 초기화 시점에 모든 pkl 파일을 메모리에 로드
-        self.sleep = 0
-        self.NonDetected = 0
+
 
     def __len__(self):
         return len(self.pkl_files)
@@ -83,19 +79,16 @@ class FocusDataset(Dataset):
             "blendshapes": blendshapes,
             "label": label
         }
-    def get_sleep_rate(self):
-        print(f'NonDetected: {self.NonDetected}')
-        print(f'sleep: {self.sleep}')
-        return 
+
+            
+
 
 if __name__ == "__main__":
-    base_path = '/home/hyun/focussu-ai/data/109.학습태도_및_성향_관찰_데이터/3.개방데이터/1.데이터/Training'
+    base_path = '/shared_data/focussu/109.학습태도_및_성향_관찰_데이터/3.개방데이터/1.데이터/Training'
     #file_list = ['00_01', '00_02', '00_03', '00_04', '00_05', '10_01',
      #           '10_02','10_03']
     file_list = ['00_01', '10_03', '00_02', '00_03', '10_02']
 
-    img_path = '01.원천데이터'
-    meta_path = '02.라벨링데이터'
-    dataset = FocusDataset(base_path, img_path, meta_path, file_list)
+    dataset = FocusDataset(base_path, file_list)
     print(len(dataset))
     print(dataset[0])
