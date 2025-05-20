@@ -45,7 +45,8 @@ class FocusDataset(Dataset):
                     'category_id': meta_data['이미지']['category']['id']
                 }
         # 초기화 시점에 모든 pkl 파일을 메모리에 로드
-        
+        self.sleep = 0
+        self.NonDetected = 0
 
     def __len__(self):
         return len(self.pkl_files)
@@ -82,12 +83,16 @@ class FocusDataset(Dataset):
             "blendshapes": blendshapes,
             "label": label
         }
+    def get_sleep_rate(self):
+        print(f'NonDetected: {self.NonDetected}')
+        print(f'sleep: {self.sleep}')
+        return 
 
 if __name__ == "__main__":
     base_path = '/home/hyun/focussu-ai/data/109.학습태도_및_성향_관찰_데이터/3.개방데이터/1.데이터/Training'
     #file_list = ['00_01', '00_02', '00_03', '00_04', '00_05', '10_01',
      #           '10_02','10_03']
-    file_list = ['00_01', '10_03']
+    file_list = ['00_01', '10_03', '00_02', '00_03', '10_02']
 
     img_path = '01.원천데이터'
     meta_path = '02.라벨링데이터'
