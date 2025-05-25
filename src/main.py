@@ -135,9 +135,8 @@ async def predict_face(file: UploadFile = File(..., description="분석할 얼�
         processing_time = time.time() - start_time
         
         return PredictionResponse(
-            prediction=result.get("prediction", "unknown"),
+            prediction=result.get("label", "unknown"),
             confidence=result.get("confidence", 0.0),
-            landmarks_count=len(landmarks) if landmarks is not None else 0,
             processing_time=round(processing_time, 3)
         )
         
