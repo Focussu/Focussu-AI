@@ -13,3 +13,5 @@ tensorflow-hub>=0.12.0
 mediapipe
 matplotlib
 pandas
+wandb
+pyarrow

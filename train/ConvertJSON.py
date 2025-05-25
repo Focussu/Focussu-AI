@@ -6,9 +6,9 @@ import glob
 from pathlib import Path
 
 # 상수 정의
-BASE_PATH = '/shared_data/focussu/109.학습태도_및_성향_관찰_데이터/3.개방데이터/1.데이터/Training'
+BASE_PATH = '/shared_data/focussu/109.학습태도_및_성향_관찰_데이터/3.개방데이터/1.데이터/Validation'
 META_PATH = os.path.join(BASE_PATH, '02.라벨링데이터')
-OUTPUT_DIR = os.path.join(META_PATH, 'train_meta_parts')  # 실질 저장 경로 (폴더)
+OUTPUT_DIR = os.path.join(META_PATH, 'val_meta_parts')  # 실질 저장 경로 (폴더)
 
 # 출력 디렉토리 생성
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -37,7 +37,7 @@ def process_chunk(chunk):
 
 if __name__ == "__main__":
     # JSON 파일 목록 가져오기
-    meta_files = glob.glob(os.path.join(META_PATH, 'TL_*/*.json'))
+    meta_files = glob.glob(os.path.join(META_PATH, '*/*.json'))
     print(f"Found {len(meta_files)} JSON files to process")
 
     CHUNK_SIZE = 1000
