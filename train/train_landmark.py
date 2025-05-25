@@ -25,7 +25,7 @@ base_path = '/shared_data/focussu/109.학습태도_및_성향_관찰_데이터/3
 model_save_path = '/home/hyun/focussu-ai/model'
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-model = PointNetClassifier().to(device)
+model = PointNetClassifier(num_classes=1).to(device)
 num_epochs = 400
 batch_size = 128
 learning_rate = 1e-3
@@ -51,7 +51,8 @@ def train():
     val_loader = DataLoader(val_dataset, num_workers=4, batch_size=batch_size, shuffle=False)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-    criterion = nn.CrossEntropyLoss()
+    #criterion = nn.CrossEntropyLoss()
+    criterion = nn.BCEWithLogitsLoss()
     scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0.001, max_lr=0.01, step_size_up=50, step_size_down=100, mode='triangular')
     best_accuracy = 0.0
 
@@ -60,7 +61,7 @@ def train():
         train_loss = 0.0
         for i, batch in enumerate(tqdm(train_loader, desc=f'Batches (Epoch {epoch+1})', leave=False)):
             landmarks = batch['landmarks'].to(device)
-            label = (batch['label'] - 1).to(device)
+            label = (batch['label'] - 1).float().to(device)
             optimizer.zero_grad()
             output = model(landmarks)
             loss = criterion(output, label)
@@ -87,9 +88,13 @@ def train():
                     output = model(landmarks)
                     loss = criterion(output, label)
                     val_loss += loss.item()
-                    _, predicted = torch.max(output.data, 1)
-                    total += label.size(0)
+                    #### 
+                    predicted = torch.round(torch.sigmoid(output))
                     correct += (predicted == label).sum().item()
+                    total += label.size(0)
+                    #_, predicted = torch.max(output.data, 1)
+                    #total += label.size(0)
+                    #correct += (predicted == label).sum().item()
 
                 avg_val_loss = val_loss / len(val_loader)
                 accuracy = 100 * correct / total

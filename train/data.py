@@ -152,6 +152,9 @@ class FocusDataset_V2(Dataset):
         
         # 해당 파일명의 라벨 가져오기
         label = self.meta_df.iloc[idx]['category_id']
+        # category_id가 3인 경우 2로 변경
+        if label == 3:
+            label = 2
  
         return {
             "landmarks": landmarks,
