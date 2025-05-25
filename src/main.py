@@ -2,6 +2,12 @@ from fastapi import FastAPI, HTTPException, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 import os
 from pathlib import Path
+import torch
+import numpy as np
+from PIL import Image
+import io
+from inference.pointnet import load_pointnet, predict
+from inference.landmarker import load_mediapipe, get_landmark
 
 app = FastAPI()
 
@@ -18,6 +24,19 @@ app.add_middleware(
 data_dir = Path("data")
 data_dir.mkdir(exist_ok=True)
 
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+POINTNET_MODEL_PATH = Path("model/best_model.pth")  # 저장된 모델 경로
+MEDIAPIPE_MODEL_PATH = Path("model/face_landmarker.task")
+
+# 모델 로드
+try:
+    POINTNET_MODEL = load_pointnet(POINTNET_MODEL_PATH, DEVICE)
+    MEDIAPIPE_MODEL = load_mediapipe(MEDIAPIPE_MODEL_PATH)
+except Exception as e:
+    print(f"모델 로드 중 오류 발생: {str(e)}")
+    raise
+
+# API 라우팅
 @app.get("/")
 def read_root():
     return {"message": "AI backend 서버입니다."}
@@ -47,3 +66,21 @@ async def image_upload(file: UploadFile = File(...)):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/predict/face")
+async def predict_face(file: UploadFile = File(...)):
+    try:
+        # 이미지 데이터 읽기
+        contents = await file.read()
+        image = Image.open(io.BytesIO(contents))
+        image_np = np.array(image)
+        
+        # 랜드마크 추출
+        landmarks = get_landmark(MEDIAPIPE_MODEL, image_np)
+        
+        # 예측
+        result = predict(POINTNET_MODEL, landmarks, DEVICE)
+        return result
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"예측 중 오류 발생: {str(e)}")
