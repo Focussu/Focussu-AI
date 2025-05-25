@@ -10,5 +10,9 @@ transformers
 tqdm
 uvicorn[standard]
 tensorflow-hub>=0.12.0
-matplotlib
 mediapipe
+matplotlib
+pandas
+wandb
+pyarrow
+
