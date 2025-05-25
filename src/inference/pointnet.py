@@ -59,6 +59,11 @@ class PointNetClassifier(nn.Module):
 
 def predict(model, data, device):
     model.eval()
+    
+    # 배치 차원이 없으면 추가 (478, 3) -> (1, 478, 3)
+    if data.dim() == 2:
+        data = data.unsqueeze(0)
+    
     landmarks = data.to(device)
 
     with torch.no_grad():
