@@ -15,7 +15,7 @@ from torch.utils.data import  DataLoader
 from tqdm import tqdm
 import wandb
 
-from train.data import FocusDataset_V2
+from train.data import FocusDataset_V2, FocusDataset_V3
 from model.PointNet import PointNetClassifier
 
 # 01. 모델 저장하기
@@ -25,7 +25,7 @@ base_path = '/shared_data/focussu/109.학습태도_및_성향_관찰_데이터/3
 model_save_path = '/home/hyun/focussu-ai/model'
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-model = PointNetClassifier().to(device)
+model = PointNetClassifier(num_classes=1).to(device)
 num_epochs = 400
 batch_size = 128
 learning_rate = 1e-3
@@ -44,15 +44,15 @@ def train():
         }
     )
     
-    train_dataset = FocusDataset_V2(base_path + '/Training')
-    val_dataset = FocusDataset_V2(base_path + '/Validation')
+    train_dataset = FocusDataset_V3(base_path + '/Training')
+    val_dataset = FocusDataset_V3(base_path + '/Validation')
 
     train_loader = DataLoader(train_dataset,num_workers=4, batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, num_workers=4, batch_size=batch_size, shuffle=False)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-    criterion = nn.CrossEntropyLoss()
-
+    #criterion = nn.CrossEntropyLoss()
+    criterion = nn.BCEWithLogitsLoss()
     scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0.001, max_lr=0.01, step_size_up=50, step_size_down=100, mode='triangular')
     best_accuracy = 0.0
 
@@ -61,7 +61,7 @@ def train():
         train_loss = 0.0
         for i, batch in enumerate(tqdm(train_loader, desc=f'Batches (Epoch {epoch+1})', leave=False)):
             landmarks = batch['landmarks'].to(device)
-            label = (batch['label']).to(device)
+            label = (batch['label']).float().to(device).unsqueeze(1)  # [batch_size] -> [batch_size, 1]
             optimizer.zero_grad()
             output = model(landmarks)
             loss = criterion(output, label)
@@ -84,20 +84,24 @@ def train():
             with torch.no_grad():
                 for batch in val_loader:
                     landmarks = batch['landmarks'].to(device)
-                    label = (batch['label']).to(device)  # Train과 동일한 방식
+                    label = (batch['label']).float().to(device).unsqueeze(1)  # Train과 동일한 방식
                     output = model(landmarks)
                     loss = criterion(output, label)
                     val_loss += loss.item()
-                    _, predicted = torch.max(output.data, 1)
-                    total += label.size(0)
+                    #### 
+                    predicted = torch.round(torch.sigmoid(output))
                     correct += (predicted == label).sum().item()
+                    total += label.size(0)
+                    #_, predicted = torch.max(output.data, 1)
+                    #total += label.size(0)
+                    #correct += (predicted == label).sum().item()
 
                 avg_val_loss = val_loss / len(val_loader)
                 accuracy = 100 * correct / total
                 print(f'Epoch {epoch + 1}/{num_epochs}, Accuracy: {accuracy}%')
                 if(accuracy > best_accuracy):
                     best_accuracy = accuracy
-                    torch.save(model.state_dict(), model_save_path + '/best_model.pth')
+                    torch.save(model.state_dict(), model_save_path + '/best_binary_model.pth')
                 # wandb에 로깅
                 wandb.log({
                     "val/loss": avg_val_loss,
