@@ -159,6 +159,7 @@ class FocusDataset_V2(Dataset):
             "label": label
         }
 
+
 class FocusDataset_V3(Dataset):
     def __init__(self, base_path):
         self.base_path = base_path
@@ -234,6 +235,83 @@ class FocusDataset_V3(Dataset):
  
         return {
             "landmarks": landmarks,
+            "label": label
+        }
+
+class blendshape_dataset(Dataset):
+    def __init__(self, base_path):
+        self.base_path = base_path
+
+        # 저장된 랜드마크 파일 이름 리스트 가져오기
+        self.blendshape_files = glob.glob(f'{base_path}/01.원천데이터/processed_blendshape/*.npy')
+
+        print(f'blendshape_files: {len(self.blendshape_files)}')
+        
+        # parquet 메타 데이터 파일 읽기
+        meta_df = []
+        parquet_list = glob.glob(f'{base_path}/02.라벨링데이터/*/*.parquet')
+        CHUNK_SIZE = 1000
+        for i in range(0, len(parquet_list), CHUNK_SIZE):
+            chunk_files = parquet_list[i:i + CHUNK_SIZE]
+            chunk_df = pd.concat([pd.read_parquet(f) for f in chunk_files], ignore_index=True)
+            meta_df.append(chunk_df)
+        self.meta_df = pd.concat(meta_df, ignore_index=True)
+        self.meta_df['format'] = self.meta_df['format'].str.replace('.jpg', '')
+        # 랜드마크 파일 경로와 메타데이터 병합
+        blendshape_paths_df = pd.DataFrame({
+            'path': self.blendshape_files,
+            'format': [os.path.basename(f).replace('_blendshapes.npy', '') for f in self.blendshape_files]
+        })
+        
+        # 불일치 확인
+        meta_formats = set(self.meta_df['format'])
+        blendshape_formats = set(blendshape_paths_df['format'])
+        self.meta_df['category_id'] = self.meta_df['category_id'].astype(int).map(lambda x: 0 if x == 1 else 1)
+        # 메타데이터에만 있는 format
+        only_in_meta = meta_formats - blendshape_formats
+        if only_in_meta:
+            print(f"\n경고: 메타데이터에만 존재하는 format이 있습니다:")
+            print(f"개수: {len(only_in_meta)}")
+            print("예시:", list(only_in_meta)[:5])
+        
+        # 랜드마크에만 있는 format
+        only_in_blendshape = blendshape_formats - meta_formats
+        if only_in_blendshape:
+            print(f"\n경고: blendshape에만 존재하는 format이 있습니다:")
+            print(f"개수: {len(only_in_blendshape)}")
+            print("예시:", list(only_in_blendshape)[:5])
+        
+        # 메타데이터와 랜드마크 경로 병합
+        self.meta_df = pd.merge(
+            self.meta_df,
+            blendshape_paths_df,
+            on='format',
+            how='inner'
+        )
+        
+        print(f'\n병합 전 메타데이터 수: {len(meta_formats)}')
+        print(f'병합 전 blendshape 파일 수: {len(blendshape_formats)}')
+        print(f'병합 후 데이터 수: {len(self.meta_df)}')
+        
+        if len(self.meta_df) == 0:
+            raise ValueError("병합 후 데이터가 없습니다. blendshape 파일과 메타데이터가 일치하지 않습니다.")
+
+    def __len__(self):
+        return len(self.meta_df)
+        
+    def __getitem__(self, idx):
+        blendshape_path = self.meta_df.iloc[idx]['path']
+
+
+        # 저장된 랜드마크와 블렌드쉐이프 로드
+        blendshapes = torch.from_numpy(np.load(blendshape_path)).float()
+
+        
+        # 해당 파일명의 라벨 가져오기
+        label = self.meta_df.iloc[idx]['category_id']
+ 
+        return {
+            "blendshapes": blendshapes,
             "label": label
         }
     
