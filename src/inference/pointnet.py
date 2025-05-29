@@ -14,7 +14,7 @@ label_map = {
 }
 
 class PointNetClassifier(nn.Module):
-    def __init__(self, num_classes=3):
+    def __init__(self, num_classes=1):
         super(PointNetClassifier, self).__init__()
 
         self.fc1 = nn.Linear(3, 64)
@@ -64,18 +64,17 @@ def predict(model, data, device):
     if data.dim() == 2:
         data = data.unsqueeze(0)
     
-    landmarks = data.to(device)
+    # UserWarning 해결: torch.tensor() 대신 detach().clone() 사용
+    if data.device != device:
+        landmarks = data.detach().clone().to(device)
+    else:
+        landmarks = data.detach().clone()
 
     with torch.no_grad():
         logits = model(landmarks)
-        probs = torch.softmax(logits, dim=1)
-        pred_class = torch.argmax(probs, dim=1).item()
-        confidence = probs[0, pred_class].item()
-        return {
-            "class_index": pred_class,
-            "label": label_map.get(pred_class, f"class_{pred_class}"),
-            "confidence": round(confidence, 4)
-        }
+        probs = torch.sigmoid(logits)
+        confidence = (1-probs[0].item())
+        return round(confidence, 4)
 
 def load_pointnet(model_path, device):
     model = PointNetClassifier().to(device)
