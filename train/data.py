@@ -81,7 +81,7 @@ class FocusDataset(Dataset):
             "label": label
         }
 
-class FocusDataset_V2(Dataset):
+class FocusDataset_multi(Dataset):
     def __init__(self, base_path):
         self.base_path = base_path
 
@@ -92,7 +92,7 @@ class FocusDataset_V2(Dataset):
         
         # parquet 메타 데이터 파일 읽기
         meta_df = []
-        parquet_list = glob.glob(f'{base_path}/02.라벨링데이터/*/*.parquet')
+        parquet_list = glob.glob(f'{base_path}/02.라벨링데이터/*_with_emotion/*.parquet')
         CHUNK_SIZE = 1000
         for i in range(0, len(parquet_list), CHUNK_SIZE):
             chunk_files = parquet_list[i:i + CHUNK_SIZE]
@@ -136,6 +136,27 @@ class FocusDataset_V2(Dataset):
         print(f'병합 전 랜드마크 파일 수: {len(landmark_formats)}')
         print(f'병합 후 데이터 수: {len(self.meta_df)}')
         
+        ## 라벨 column 추가
+        def create_label(row):
+            category_id = row['category_id']
+            emotion = row['emotion']
+            
+            if category_id == 1 and emotion == "흥미로움":
+                return 0
+            elif category_id == 1 and emotion == "차분함":
+                return 1
+            elif category_id == 2 and emotion == "차분함":
+                return 2
+            elif category_id == 2 and emotion == "지루함":
+                return 3
+            elif category_id == 3:
+                return 4
+            else:
+                # 예외 상황에 대한 처리 (필요시 수정)
+                return -1
+                
+        self.meta_df['label'] = self.meta_df.apply(create_label, axis=1)
+
         if len(self.meta_df) == 0:
             raise ValueError("병합 후 데이터가 없습니다. 랜드마크 파일과 메타데이터가 일치하지 않습니다.")
 
@@ -151,7 +172,7 @@ class FocusDataset_V2(Dataset):
 
         
         # 해당 파일명의 라벨 가져오기
-        label = self.meta_df.iloc[idx]['category_id']
+        label = self.meta_df.iloc[idx]['label']
 
  
         return {
@@ -171,7 +192,7 @@ class FocusDataset_V3(Dataset):
         
         # parquet 메타 데이터 파일 읽기
         meta_df = []
-        parquet_list = glob.glob(f'{base_path}/02.라벨링데이터/*/*.parquet')
+        parquet_list = glob.glob(f'{base_path}/02.라벨링데이터/*_with_parts/*.parquet')
         CHUNK_SIZE = 1000
         for i in range(0, len(parquet_list), CHUNK_SIZE):
             chunk_files = parquet_list[i:i + CHUNK_SIZE]
@@ -317,10 +338,8 @@ class blendshape_dataset(Dataset):
     
 if __name__ == "__main__":
     base_path = '/shared_data/focussu/109.학습태도_및_성향_관찰_데이터/3.개방데이터/1.데이터/Training'
-    #file_list = ['00_01', '00_02', '00_03', '00_04', '00_05', '10_01',
-     #           '10_02','10_03']
-    file_list = ['00_01', '10_03', '00_02', '00_03', '10_02']
 
-    dataset = FocusDataset_V2(base_path)
+
+    dataset = FocusDataset_multi(base_path)
     print(len(dataset))
-    print(dataset[0])
+    print(dataset[0]['label'])

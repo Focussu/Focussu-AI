@@ -24,6 +24,7 @@ def parse_json(file):
                 'format': metadata['이미지']['format'],
                 'idx': metadata['이미지']['timeline']['id'],
                 'category_id': metadata['이미지']['category']['id'],
+                
             }
     except (json.JSONDecodeError, KeyError, FileNotFoundError) as e:
         print(f"Error processing {file}: {str(e)}")

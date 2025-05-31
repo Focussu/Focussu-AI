@@ -72,12 +72,14 @@ def predict(model, data, device):
 
     with torch.no_grad():
         logits = model(landmarks)
-        probs = torch.sigmoid(logits)
-        confidence = (1-probs[0].item())
-        return round(confidence, 4)
+        probs = torch.softmax(logits, dim=1)
+        return probs
+        # probs = torch.sigmoid(logits)
+        # confidence = (1-probs[0].item())
+        # return round(confidence, 4)
 
 def load_pointnet(model_path, device):
-    model = PointNetClassifier().to(device)
+    model = PointNetClassifier(num_classes=5).to(device)
     model.load_state_dict(torch.load(model_path, map_location=device))
     return model
 

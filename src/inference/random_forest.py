@@ -19,11 +19,11 @@ def predict_rf(model, blendshapes, device=None):
     
     Args:
         model: 학습된 Random Forest 모델
-        blendshapes: 블렌드셰이프 데이터 (torch.Tensor 또는 numpy.ndarray)
+        blendshapes: 블렌드셰이프 데이터 (torch.Tensor 또는 numpy.ndarray) - (B, 52) 형태
         device: 디바이스 (Random Forest는 CPU에서만 동작하므로 무시됨)
     
     Returns:
-        float: 집중도 confidence 값 (0.0 ~ 1.0)
+        float 또는 list: 집중도 confidence 값 (0.0 ~ 1.0)
     """
     try:
         # 입력 데이터 전처리
@@ -31,47 +31,60 @@ def predict_rf(model, blendshapes, device=None):
             blendshapes_np = blendshapes.detach().cpu().numpy()
         else:
             blendshapes_np = np.array(blendshapes)
+
         
-        # 1차원으로 변환 (52,) 형태로 맞춤
-        if blendshapes_np.ndim > 1:
-            blendshapes_np = blendshapes_np.flatten()
-        
-        # 배치 차원 추가 (모델이 2D 배열을 기대하므로)
+        # 배치 처리를 위한 형태 확인
         if blendshapes_np.ndim == 1:
+            # 1차원인 경우 (52,) -> (1, 52)로 변환
             blendshapes_np = blendshapes_np.reshape(1, -1)
+        elif blendshapes_np.ndim == 2:
+            # 이미 2차원인 경우 (B, 52) 형태 유지
+            pass
+        else:
+            raise ValueError(f"지원하지 않는 입력 차원: {blendshapes_np.ndim}")
         
-        # 특성 개수 확인 (52개 블렌드셰이프)
+        # 특성 개수 확인
         expected_features = 52
         if blendshapes_np.shape[1] != expected_features:
             raise ValueError(f"블렌드셰이프 특성 개수가 맞지 않습니다. 예상: {expected_features}, 실제: {blendshapes_np.shape[1]}")
         
-        #print(f"Random Forest 입력 데이터 형태: {blendshapes_np.shape}")
-        #print(f"블렌드셰이프 값 범위: min={blendshapes_np.min():.4f}, max={blendshapes_np.max():.4f}")
+        print(f"Random Forest 최종 입력 형태: {blendshapes_np.shape}")
+        print(f"블렌드셰이프 값 범위: min={blendshapes_np.min():.4f}, max={blendshapes_np.max():.4f}")
         
-        # 확률 예측 (각 클래스에 대한 확률)
-        probabilities = model.predict_proba(blendshapes_np)[0]  # 첫 번째 샘플의 확률
-        print(f"Random Forest 예측 확률: {probabilities}")
+        # 배치 예측
+        probabilities = model.predict_proba(blendshapes_np)  # (B, n_classes)
+        print(f"Random Forest 예측 확률 형태: {probabilities.shape}")
         
         # 클래스 라벨 확인
         classes = model.classes_
+        batch_size = blendshapes_np.shape[0]
         
-        # 집중(focused) 클래스의 확률을 confidence로 사용
-        # 클래스 0: 비집중, 클래스 1: 집중
-        if len(classes) == 2:
-            if 0 in classes:
-                focused_idx = np.where(classes == 0)[0][0]
-                confidence = float(probabilities[focused_idx])
-                #print(f"집중 클래스(0) 확률: {confidence}")
+        confidences = []
+        for i in range(batch_size):
+            batch_probs = probabilities[i]
+            
+            # 집중(focused) 클래스의 확률을 confidence로 사용
+            # 클래스 0: 비집중, 클래스 1: 집중
+            if len(classes) == 2:
+                if 0 in classes:
+                    focused_idx = np.where(classes == 0)[0][0]
+                    confidence = float(batch_probs[focused_idx])
+                else:
+                    # 클래스 0이 없다면 가장 높은 확률을 사용
+                    confidence = float(np.max(batch_probs))
             else:
-                # 클래스 0이 없다면 가장 높은 확률을 사용
-                confidence = float(np.max(probabilities))
-                print(f"최대 확률 사용: {confidence}")
-        else:
-            # 이진 분류가 아닌 경우 가장 높은 확률을 사용
-            confidence = float(np.max(probabilities))
-            print(f"다중 클래스 최대 확률: {confidence}")
+                # 이진 분류가 아닌 경우 가장 높은 확률을 사용
+                confidence = float(np.max(batch_probs))
+            
+            confidences.append(confidence)
         
-        return confidence
+        print(f"Random Forest 배치 결과: {confidences}")
+        
+        # 단일 배치인 경우 float 반환, 여러 배치인 경우 list 반환
+        if batch_size == 1:
+            return confidences[0]
+        else:
+            return confidences
         
     except Exception as e:
         print(f"Random Forest 예측 중 오류 발생: {str(e)}")
