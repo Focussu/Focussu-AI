@@ -180,13 +180,7 @@ async def get_score(request: ScorePredictionRequest):
         if landmark_result[4] > 0.5:
             landmark_score = 0.0
         
-        landmark_score = pos if pos > neg else neg
-        print("[0]:", landmark_result[0])
-        print("[1]:", landmark_result[1])
-        print("[2]:", landmark_result[2])
-        print("[3]:", landmark_result[3])
-        print("[4]:", landmark_result[4])
-        print("landmark_score:", landmark_score)
+        landmark_score = pos if pos > neg else (1-neg)
         
         if isinstance(blendshape_result, (list, tuple, np.ndarray)):
             blendshape_score = float(np.mean(blendshape_result))
@@ -195,7 +189,7 @@ async def get_score(request: ScorePredictionRequest):
                 
     
         # 최종 confidence 계산
-        final_confidence = (0.7 * landmark_score + 0.3 * blendshape_score) if blendshape_score > 0 else landmark_score
+        final_confidence = (0.8 * landmark_score + 0.2 * blendshape_score) if blendshape_score > 0 else landmark_score
         processing_time = time.time() - start_time
         end_time = time.time()
         
@@ -216,12 +210,12 @@ async def get_score(request: ScorePredictionRequest):
             "score": final_confidence
         }
         
-        # response = requests.post(
-        #     f"{API_SERVER_URL}/ai-analysis", 
-        #     json=payload,  # json 파라미터 사용
-        #     headers=headers
-        # )
-        # print(response)
+        response = requests.post(
+            f"{API_SERVER_URL}/ai-analysis", 
+            json=payload,  # json 파라미터 사용
+            headers=headers
+        )
+        print(response)
         
         return ScoreResponse(
             landmark_score=landmark_score,
