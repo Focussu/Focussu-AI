@@ -336,6 +336,75 @@ class blendshape_dataset(Dataset):
             "label": label
         }
     
+
+class FocusDatasetWithRotation(FocusDataset_multi):
+    def __init__(self, base_path, noise=False, both=False, rotation_prob=1.0):
+        super().__init__(base_path)
+        self.noise = noise
+        self.both = both # 기존 데이터셋에 추가해서 증강할건지
+        self.rotation_prob = rotation_prob  # 회전 적용 확률
+
+    def get_random_rotation_matrix_xyz(degree_range=15):
+        # 각 축마다 -degree_range ~ +degree_range 사이에서 랜덤 각도 선택
+        angles = np.radians(np.random.uniform(-degree_range, degree_range, size=3))
+        ax, ay, az = angles
+        cx, cy, cz = np.cos(angles)
+        sx, sy, sz = np.sin(angles)
+
+        # # X축 회전 (Pitch)
+        # Rx = torch.tensor([
+        #     [1, 0, 0],
+        #     [0, cx, -sx],
+        #     [0, sx,  cx]
+        # ])
+
+        # Y축 회전 (Roll) 좌우로 기울이기
+        Ry = torch.tensor([
+            [cy, 0, sy],
+            [0,  1, 0],
+            [-sy, 0, cy]
+        ], dtype=torch.float32)
+
+        # # Z축 회전 (Yaw)
+        # Rz = torch.tensor([
+        #     [cz, -sz, 0],
+        #     [sz,  cz, 0],
+        #     [0,   0,  1]
+        # ])
+
+        return Ry
+
+    def __getitem__(self, idx):
+        landmark_path = self.meta_df.iloc[idx]['path']
+        original_landmarks = torch.from_numpy(np.load(landmark_path)).float()
+        label = self.meta_df.iloc[idx]['label']
+
+        apply_rotation = self.noise and (np.random.rand() < self.rotation_prob)
+
+        if apply_rotation:
+            rot_matrix = self.get_random_z_rotation_matrix()
+            rotated_landmarks = torch.matmul(original_landmarks, rot_matrix)
+
+            if self.both:
+                return {
+                    "original_landmarks": original_landmarks,
+                    "rotated_landmarks": rotated_landmarks,
+                    "label": label
+                }
+            else:
+                return {
+                    "landmarks": rotated_landmarks,
+                    "label": label
+                }
+        else:
+            return {
+                "landmarks": original_landmarks,
+                "label": label
+            }
+
+
+
+    
 if __name__ == "__main__":
     base_path = '/shared_data/focussu/109.학습태도_및_성향_관찰_데이터/3.개방데이터/1.데이터/Training'
 
