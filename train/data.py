@@ -177,7 +177,8 @@ class FocusDataset_multi(Dataset):
  
         return {
             "landmarks": landmarks,
-            "label": label
+            "label": label,
+            "format": self.meta_df.iloc[idx]['format']
         }
 
 
