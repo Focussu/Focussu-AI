@@ -15,6 +15,8 @@ import pickle
 import json
 import os
 from tqdm import tqdm
+import random
+
 
 
 class FocusDataset(Dataset):
@@ -337,39 +339,104 @@ class blendshape_dataset(Dataset):
         }
     
 
-class FocusDatasetWithAugmentations(FocusDataset_multi):
+class FocusDatasetWithAugmentationsclass(Dataset):
     def __init__(self, base_path, rotation=False, noise=False):
-        super().__init__(base_path)
-
-        self.use_rotation = rotation
-        self.use_noise = noise
-        self.rotation_ratio = 0.3
-        self.noise_ratio = 0.2
+        self.base_path = base_path
+        self.rotation = rotation
+        self.noise = noise
+        self.rotation_prob = 0.3
+        self.noise_prob = 0.3
+        self.angle_deg = 5
         self.noise_std = 0.01
 
-        self.original_indices = list(range(len(self.meta_df)))
+        self.landmark_files = glob.glob(f'{base_path}/01.원천데이터/processed_landmark/*.npy')
+        print(f'landmark_files: {len(self.landmark_files)}')
 
-        # 증강 비활성화 시: 원본 데이터만 사용
-        if not self.use_rotation and not self.use_noise:
-            self.combined_indices = self.original_indices
+        # parquet 메타 데이터 파일 읽기
+        meta_df = []
+        parquet_list = glob.glob(f'{base_path}/02.라벨링데이터/*_with_emotion/*.parquet')
+        CHUNK_SIZE = 1000
+        for i in range(0, len(parquet_list), CHUNK_SIZE):
+            chunk_files = parquet_list[i:i + CHUNK_SIZE]
+            chunk_df = pd.concat([pd.read_parquet(f) for f in chunk_files], ignore_index=True)
+            meta_df.append(chunk_df)
+        self.meta_df = pd.concat(meta_df, ignore_index=True)
+        self.meta_df['format'] = self.meta_df['format'].str.replace('.jpg', '')
+
+        landmark_paths_df = pd.DataFrame({
+            'path': self.landmark_files,
+            'format': [os.path.basename(f).replace('_landmarks.npy', '') for f in self.landmark_files]
+        })
+
+        self.meta_df = pd.merge(self.meta_df, landmark_paths_df, on='format', how='inner')
+
+        def create_label(row):
+            category_id = row['category_id']
+            emotion = row['emotion']
+            if category_id == 1 and emotion == "흥미로움":
+                return 0
+            elif category_id == 1 and emotion == "차분함":
+                return 1
+            elif category_id == 2 and emotion == "차분함":
+                return 2
+            elif category_id == 2 and emotion == "지루함":
+                return 3
+            elif category_id == 3:
+                return 4
+            else:
+                return -1
+
+        self.meta_df['label'] = self.meta_df.apply(create_label, axis=1)
+
+        if len(self.meta_df) == 0:
+            raise ValueError("병합 후 데이터가 없습니다. 랜드마크 파일과 메타데이터가 일치하지 않습니다.")
+
+        # 기본 샘플
+        self.samples = self.meta_df[['path', 'label']].to_dict(orient='records')
+
+        # 회전 샘플 추가
+        if self.rotation:
+            rotation_count = int(len(self.samples) * self.rotation_prob)
+            rotation_samples = random.sample(self.samples, rotation_count)
+            for sample in rotation_samples:
+                landmark_array = np.load(sample['path'])
+                rotated = self.apply_y_rotation(landmark_array)
+                self.samples.append({
+                    "landmarks": rotated,
+                    "label": sample['label']
+                })
+
+        # 노이즈 샘플 추가
+        if self.noise:
+            noise_count = int(len(self.samples) * self.noise_prob)
+            noise_samples = random.sample(self.samples, noise_count)
+            for sample in noise_samples:
+                landmark_array = np.load(sample['path'])
+                noised = self.add_gaussian_noise(torch.from_numpy(landmark_array).float())
+                self.samples.append({
+                    "landmarks": noised,
+                    "label": sample['label']
+                })
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        item = self.samples[idx]
+        if 'landmarks' in item:
+            landmarks = item['landmarks']
+            label = item['label']
         else:
-            self.rotation_indices = []
-            self.noise_indices = []
-
-            if self.use_rotation:
-                num_rot = int(len(self.original_indices) * self.rotation_ratio)
-                self.rotation_indices = np.random.choice(self.original_indices, size=num_rot, replace=False).tolist()
-
-            if self.use_noise:
-                num_noise = int(len(self.original_indices) * self.noise_ratio)
-                self.noise_indices = np.random.choice(self.original_indices, size=num_noise, replace=False).tolist()
-
-            # 원본 + 증강된 데이터 추가
-            self.combined_indices = self.original_indices + self.rotation_indices + self.noise_indices
+            landmark_path = item['path']
+            landmarks = torch.from_numpy(np.load(landmark_path)).float()
+            label = item['label']
+        return {
+            "landmarks": landmarks,
+            "label": label
+        }
 
     def get_random_y_rotation_matrix(self):
-        angle_deg = 5
-        theta = np.radians(angle_deg)
+        theta = np.radians(self.angle_deg)
         cos_t = np.cos(theta)
         sin_t = np.sin(theta)
         return torch.tensor([
@@ -378,32 +445,14 @@ class FocusDatasetWithAugmentations(FocusDataset_multi):
             [-sin_t, 0, cos_t]
         ], dtype=torch.float32)
 
+    def apply_y_rotation(self, landmark_array):
+        rotation_matrix = self.get_random_y_rotation_matrix()
+        rotated = torch.from_numpy(landmark_array).float() @ rotation_matrix.T
+        return rotated
+
     def add_gaussian_noise(self, landmarks):
         noise = torch.randn_like(landmarks) * self.noise_std
         return landmarks + noise
-
-    def __len__(self):
-        return len(self.combined_indices)
-
-    def __getitem__(self, idx):
-        original_idx = self.combined_indices[idx]
-        landmark_path = self.meta_df.iloc[original_idx]['path']
-        landmarks = torch.from_numpy(np.load(landmark_path)).float()
-        label = self.meta_df.iloc[original_idx]['label']
-
-        # 회전 적용 여부
-        if self.use_rotation and original_idx in self.rotation_indices:
-            rot_matrix = self.get_random_y_rotation_matrix()
-            landmarks = torch.matmul(landmarks, rot_matrix)
-
-        # 노이즈 적용 여부
-        if self.use_noise and original_idx in self.noise_indices:
-            landmarks = self.add_gaussian_noise(landmarks)
-
-        return {
-            "landmarks": landmarks,
-            "label": label
-        }
 
 
 
