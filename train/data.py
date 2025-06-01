@@ -337,70 +337,74 @@ class blendshape_dataset(Dataset):
         }
     
 
-class FocusDatasetWithRotation(FocusDataset_multi):
-    def __init__(self, base_path, noise=False, both=False, rotation_prob=1.0):
+class FocusDatasetWithAugmentations(FocusDataset_multi):
+    def __init__(self, base_path, rotation=False, noise=False):
         super().__init__(base_path)
-        self.noise = noise
-        self.both = both # 기존 데이터셋에 추가해서 증강할건지
-        self.rotation_prob = rotation_prob  # 회전 적용 확률
 
-    def get_random_rotation_matrix_xyz(degree_range=15):
-        # 각 축마다 -degree_range ~ +degree_range 사이에서 랜덤 각도 선택
-        angles = np.radians(np.random.uniform(-degree_range, degree_range, size=3))
-        ax, ay, az = angles
-        cx, cy, cz = np.cos(angles)
-        sx, sy, sz = np.sin(angles)
+        self.use_rotation = rotation
+        self.use_noise = noise
+        self.rotation_ratio = 0.3
+        self.noise_ratio = 0.2
+        self.noise_std = 0.01
 
-        # # X축 회전 (Pitch)
-        # Rx = torch.tensor([
-        #     [1, 0, 0],
-        #     [0, cx, -sx],
-        #     [0, sx,  cx]
-        # ])
+        self.original_indices = list(range(len(self.meta_df)))
 
-        # Y축 회전 (Roll) 좌우로 기울이기
-        Ry = torch.tensor([
-            [cy, 0, sy],
-            [0,  1, 0],
-            [-sy, 0, cy]
+        # 증강 비활성화 시: 원본 데이터만 사용
+        if not self.use_rotation and not self.use_noise:
+            self.combined_indices = self.original_indices
+        else:
+            self.rotation_indices = []
+            self.noise_indices = []
+
+            if self.use_rotation:
+                num_rot = int(len(self.original_indices) * self.rotation_ratio)
+                self.rotation_indices = np.random.choice(self.original_indices, size=num_rot, replace=False).tolist()
+
+            if self.use_noise:
+                num_noise = int(len(self.original_indices) * self.noise_ratio)
+                self.noise_indices = np.random.choice(self.original_indices, size=num_noise, replace=False).tolist()
+
+            # 원본 + 증강된 데이터 추가
+            self.combined_indices = self.original_indices + self.rotation_indices + self.noise_indices
+
+    def get_random_y_rotation_matrix(self):
+        angle_deg = 5
+        theta = np.radians(angle_deg)
+        cos_t = np.cos(theta)
+        sin_t = np.sin(theta)
+        return torch.tensor([
+            [cos_t, 0, sin_t],
+            [0,     1, 0],
+            [-sin_t, 0, cos_t]
         ], dtype=torch.float32)
 
-        # # Z축 회전 (Yaw)
-        # Rz = torch.tensor([
-        #     [cz, -sz, 0],
-        #     [sz,  cz, 0],
-        #     [0,   0,  1]
-        # ])
+    def add_gaussian_noise(self, landmarks):
+        noise = torch.randn_like(landmarks) * self.noise_std
+        return landmarks + noise
 
-        return Ry
+    def __len__(self):
+        return len(self.combined_indices)
 
     def __getitem__(self, idx):
-        landmark_path = self.meta_df.iloc[idx]['path']
-        original_landmarks = torch.from_numpy(np.load(landmark_path)).float()
-        label = self.meta_df.iloc[idx]['label']
+        original_idx = self.combined_indices[idx]
+        landmark_path = self.meta_df.iloc[original_idx]['path']
+        landmarks = torch.from_numpy(np.load(landmark_path)).float()
+        label = self.meta_df.iloc[original_idx]['label']
 
-        apply_rotation = self.noise and (np.random.rand() < self.rotation_prob)
+        # 회전 적용 여부
+        if self.use_rotation and original_idx in self.rotation_indices:
+            rot_matrix = self.get_random_y_rotation_matrix()
+            landmarks = torch.matmul(landmarks, rot_matrix)
 
-        if apply_rotation:
-            rot_matrix = self.get_random_z_rotation_matrix()
-            rotated_landmarks = torch.matmul(original_landmarks, rot_matrix)
+        # 노이즈 적용 여부
+        if self.use_noise and original_idx in self.noise_indices:
+            landmarks = self.add_gaussian_noise(landmarks)
 
-            if self.both:
-                return {
-                    "original_landmarks": original_landmarks,
-                    "rotated_landmarks": rotated_landmarks,
-                    "label": label
-                }
-            else:
-                return {
-                    "landmarks": rotated_landmarks,
-                    "label": label
-                }
-        else:
-            return {
-                "landmarks": original_landmarks,
-                "label": label
-            }
+        return {
+            "landmarks": landmarks,
+            "label": label
+        }
+
 
 
 
