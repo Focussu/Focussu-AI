@@ -28,6 +28,8 @@ from collections import defaultdict
 
 load_dotenv()
 
+BATCH_SIZE = 4  # 배치 크기 설정
+
 API_SERVER_URL = os.getenv('API_SERVER_URL')
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 
@@ -62,7 +64,9 @@ class UserScore():
         if scores[-1] < 0.3 and scores[-2] < 0.3:
             print("🟠 집중도 저점")
             return True
-
+        if all(score > 0.8 for score in scores):
+            print("🟢 집중도 최고점")
+            return True
         return False
 
 
@@ -224,61 +228,76 @@ base_prompt = (
     "If the person seems distracted, suggest possible causes."
 )
 
+# 이미지 불러오기
+def load_images_from_folder(folder_path: str) -> List[Image.Image]:
+    image_list = []
+    for filename in sorted(os.listdir(folder_path)):
+        if filename.lower().endswith((".png", ".jpg", ".jpeg")):
+            image_path = os.path.join(folder_path, filename)
+            img = Image.open(image_path).convert("RGB")
+            image_list.append(img)
+    return image_list
+
+# 프롬프트 생성
+def make_prompts(start_idx: int, end_idx: int) -> List[str]:
+    return [f"{base_prompt}\n\nThis is frame {i+1} in the sequence." for i in range(start_idx, end_idx)]
+
 
 @app.post("/analyze")
 async def analyze_concentration(ticketNumber: int, userID: int):
 # async def analyze_concentration(files: List[UploadFile] = File(...)):
-    # try:
-    #     if len(files) == 0:
-    #         raise ValueError("이미지가 업로드되지 않았습니다.")
+    print("ㅗㅗㅗㅗㅗㅗㅗㅗㅗㅗㅗㅗㅗㅗㅗㅗ")
+    try:
+        folder_path = f"/home/focussu/minji/Focussu-AI/data/{ticketNumber}"
+        if not os.path.exists(folder_path):
+            raise FileNotFoundError(f"폴더가 존재하지 않음: {folder_path}")
 
-    #     # 1. 이미지 전처리
-    #     image_tensor = process_uploaded_images(files)
+        # 1. 이미지 로딩 및 전처리
+        image_list = load_images_from_folder(folder_path)
+        if len(image_list) == 0:
+            raise ValueError("이미지가 없습니다.")
+        image_tensor = process_uploaded_images(image_list)
+        
+        # 2. 배치로 나눠 처리
+        all_responses = []
+        num_images = image_tensor.shape[0]
+        for i in range(0, num_images, BATCH_SIZE):
+            image_batch = image_tensor[i:i+BATCH_SIZE]
+            prompts = make_prompts(i, min(i + BATCH_SIZE, num_images))
+            batch_responses = generate_responses(image_batch, prompts)
+            all_responses.extend(batch_responses)
+        
+        # 3. 중복 제거 및 정리
+        unique_responses = deduplicate_responses(all_responses)
+        translated = translate_with_gpt(unique_responses)
 
-    #     # 2. 프롬프트 생성
-    #     prompts = [f"{base_prompt}\n\nThis is frame {i+1} in the sequence." for i in range(len(files))]
-
-    #     # 3. 텍스트 응답 생성
-    #     responses = generate_responses(image_tensor, prompts)
-
-    #     # 4. 중복 제거
-    #     unique_responses = deduplicate_responses(responses)
-
-    #     # 5. 번역 및 정리
-    #     translated = translate_with_gpt(unique_responses)
 
         # Post (ticketNumber, content)
         
-           # API 서버로 분석 결과 전송 (헤더 추가)
-        # headers = {
-        #     'Content-Type': 'application/json',
-        #     #'Authorization': f'Bearer {API_TOKEN}'  # Bearer 토큰 추가
-        # }
+        #    API 서버로 분석 결과 전송 (헤더 추가)
+        headers = {
+            'Content-Type': 'application/json',
+            #'Authorization': f'Bearer {API_TOKEN}'  # Bearer 토큰 추가
+        }
         
-        # payload = {
-        #     "ticketNumber": ticketNumber,
-        #     "startTime": start_time_iso,
-        #     "endTime": end_time_iso,
-        #     "score": final_confidence
-        # }
+        payload = {
+            "ticketNumber": ticketNumber,
+            "userID": userID,
+            "content": translated,
+        }
         
-        # response = requests.post(
-        #     f"{API_SERVER_URL}/ai-analysis", 
-        #     json=payload,  # json 파라미터 사용
-        #     headers=headers
-        # )
+        requests.post(
+            f"{API_SERVER_URL}/analysis-document", 
+            json=payload,  # json 파라미터 사용
+            headers=headers
+        )
         
-        # return response
-        # return {
-        #     "status": "success",
-        #     "result": translated,
-        #     "original": unique_responses
-        # }
         return {
             "status": "success",
         }
-    # except Exception as e:
-    #     raise HTTPException(status_code=500, detail=str(e))
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ====== 유틸 함수들 ======
