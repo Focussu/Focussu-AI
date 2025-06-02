@@ -20,6 +20,34 @@ class PointNetClassifier(nn.Module):
         self.dropout = nn.Dropout(0.3)
         self.cls_fc2 = nn.Linear(128, num_classes)
 
+    def extract_features(self, x):
+        """
+        중간 feature vector 추출 (classification layer 이전까지)
+        Returns: (B, 128) 크기의 feature vector
+        """
+        B, N, D = x.size()  # (B, 478, 3)
+
+        x = self.fc1(x)  # (B, N, 64)
+        x = self.bn1(x.transpose(1, 2)).transpose(1, 2)
+        x = F.relu(x)
+
+        x = self.fc2(x)  # (B, N, 128)
+        x = self.bn2(x.transpose(1, 2)).transpose(1, 2)
+        x = F.relu(x)
+
+        x = self.fc3(x)  # (B, N, 256)
+        x = self.bn3(x.transpose(1, 2)).transpose(1, 2)
+        x = F.relu(x)
+
+        x = torch.max(x, dim=1)[0]  # (B, 256) - Global Max Pooling
+
+        x = self.cls_fc1(x)         # (B, 128)
+        x = self.cls_bn1(x)
+        x = F.relu(x)
+        
+        # dropout 이전까지만 반환 (classification에 가장 가까운 feature)
+        return x
+
     def forward(self, x):
         B, N, D = x.size()  # (B, 478, 3)
 
