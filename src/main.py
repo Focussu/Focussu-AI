@@ -13,11 +13,48 @@ import io
 from inference.pointnet import load_pointnet, predict
 from inference.random_forest import load_random_forest, predict_rf
 from datetime import datetime
+from collections import defaultdict
 
 load_dotenv()
 
 API_SERVER_URL = os.getenv('API_SERVER_URL')
 
+class UserScore():
+    def __init__(self):
+        self.userScore = defaultdict(list)
+
+    def addScore(self, ticketNumber, score):
+        scores = self.userScore[ticketNumber]
+        
+        # 최근 5개만 유지
+        if len(scores) >= 5:
+            scores.pop(0)
+        scores.append(score)
+
+        # 급격한 변화 감지 (상승/하락 통합)
+        if len(scores) >= 3:
+            delta = abs(scores[-1] - scores[-2])
+            if delta >= 0.25:
+                print("📈 급격한 변화 감지")
+                return True
+            delta2 = abs(scores[-1]-scores[0])
+            if delta2 >= 0.25:
+                print("📈 급격한 변화 감지")
+                return True
+        else:
+            return False
+
+
+
+        # 저점 (집중 매우 낮음)
+        if scores[-1] < 0.3 and scores[-2] < 0.3:
+            print("🟠 집중도 저점")
+            return True
+
+        return False
+
+
+userScore = UserScore()
 
 # Pydantic 모델 정의
 class ImageUploadResponse(BaseModel):
@@ -208,7 +245,7 @@ async def get_score(request: ScorePredictionRequest):
         final_confidence = (0.8 * landmark_score + 0.2 * blendshape_score) if blendshape_score > 0 else landmark_score
         processing_time = time.time() - start_time
         end_time = time.time()
-        
+
         # 시간을 ISO 8601 형식으로 변환
         start_time_iso = datetime.fromtimestamp(start_time).isoformat() + 'Z'
         end_time_iso = datetime.fromtimestamp(end_time).isoformat() + 'Z'
@@ -232,8 +269,10 @@ async def get_score(request: ScorePredictionRequest):
             headers=headers
         )
         print(response)
-        
-        flag = True if time.time() - start_time%50 == 0 else False
+
+        # 점수 리스트 추가 및 이미지 저장 여부 설정
+        flag = userScore.addScore(ticketNumber, final_confidence)
+
         return ScoreResponse(
             landmark_score=landmark_score,
             blendshape_score=blendshape_score,
