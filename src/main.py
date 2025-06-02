@@ -246,7 +246,7 @@ def make_prompts(start_idx: int, end_idx: int) -> List[str]:
 @app.post("/analyze")
 async def analyze_concentration(ticketNumber: int, userID: int):
 # async def analyze_concentration(files: List[UploadFile] = File(...)):
-    print("ㅗㅗㅗㅗㅗㅗㅗㅗㅗㅗㅗㅗㅗㅗㅗㅗ")
+    print(f"집중도 분석 시작 - ticketNumber: {ticketNumber}, userID: {userID}")
     try:
         folder_path = f"/home/focussu/minji/Focussu-AI/data/{ticketNumber}"
         if not os.path.exists(folder_path):
@@ -256,7 +256,7 @@ async def analyze_concentration(ticketNumber: int, userID: int):
         image_list = load_images_from_folder(folder_path)
         if len(image_list) == 0:
             raise ValueError("이미지가 없습니다.")
-        image_tensor = process_uploaded_images(image_list)
+        image_tensor = process_pil_images(image_list)
         
         # 2. 배치로 나눠 처리
         all_responses = []
@@ -306,6 +306,10 @@ def process_uploaded_images(files: List[UploadFile]) -> torch.Tensor:
     image_tensor = process_images(images, image_processor, model.config)
     return image_tensor.to(device=device, dtype=dtype)
 
+def process_pil_images(images: List[Image.Image]) -> torch.Tensor:
+    """PIL Image 리스트를 처리하여 텐서로 변환"""
+    image_tensor = process_images(images, image_processor, model.config)
+    return image_tensor.to(device=device, dtype=dtype)
 
 def generate_responses(image_tensor_batch: torch.Tensor, prompts: List[str]) -> List[str]:
     conv_batch = [conv_template.copy() for _ in prompts]
@@ -409,8 +413,8 @@ async def get_score(request: ScorePredictionRequest):
         #  0: 집중(흥미) 1: 집중(차분) 2: 비집중(차분) 3: 비집중(졸음) 4: 졸음
         if landmark_result[4] > 0.5:
             landmark_score = 0.0
-        
-        landmark_score = pos if pos > neg else (1-neg)
+        else:
+            landmark_score = pos if pos > neg else (1-neg)
         
         if isinstance(blendshape_result, (list, tuple, np.ndarray)):
             blendshape_score = float(np.mean(blendshape_result))

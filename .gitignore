@@ -7,6 +7,13 @@ docker-compose_gpu.yml
 wandb/*
 wandb/
 
+# LLaVA 모델 및 체크포인트 디렉토리
+src/LLaVA/
+src/LLaVA/*
+LLaVA/
+checkpoints/
+
+
 # Created by https://www.toptal.com/developers/gitignore/api/python
 # Edit at https://www.toptal.com/developers/gitignore?templates=python
 
