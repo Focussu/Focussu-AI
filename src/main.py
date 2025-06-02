@@ -47,6 +47,7 @@ class ScoreResponse(BaseModel):
     blendshape_score: float
     confidence: float
     processing_time: float
+    flag: bool
 
 class ErrorResponse(BaseModel):
     detail: str
@@ -115,8 +116,23 @@ async def image_upload(file: UploadFile = File(..., description="업로드할 �
         # 이미지 데이터 읽기
         contents = await file.read()
         
+        # 파일명에서 ticketNumber와 timestamp 추출 시도
+        try:
+            file_name = file.filename.split(".")[0]
+            ticketNumber, timestamp = file_name.split("_")
+            ticketNumber = int(ticketNumber)
+        except (ValueError, AttributeError, IndexError):
+            # 파일명이 예상 형식이 아닌 경우 기본값 사용
+            ticketNumber = 0
+            timestamp = "unknown"
+            print(f"파일명 '{file.filename}'이 예상 형식(ticketNumber_timestamp.확장자)이 아닙니다. 기본값을 사용합니다.")
+        
         # 파일 저장
-        file_path = DATA_DIR / file.filename
+        # ticketNumber별 디렉토리 생성
+        ticket_dir = DATA_DIR / str(ticketNumber)
+        ticket_dir.mkdir(exist_ok=True)  # 디렉토리가 없으면 생성
+        
+        file_path = ticket_dir / file.filename
         with open(file_path, "wb") as f:
             f.write(contents)
         
@@ -149,7 +165,7 @@ async def get_score(request: ScorePredictionRequest):
         # 랜드마크 데이터 처리
         if not request.landmarks:
             raise HTTPException(status_code=400, detail="랜드마크 데이터가 없습니다")
-        
+        print(f"ticketNumber: {ticketNumber}")
         landmarks_tensor = _process_landmarks(request.landmarks)
 
         
@@ -217,11 +233,13 @@ async def get_score(request: ScorePredictionRequest):
         )
         print(response)
         
+        flag = True if time.time() - start_time%50 == 0 else False
         return ScoreResponse(
             landmark_score=landmark_score,
             blendshape_score=blendshape_score,
             confidence=float(final_confidence),
-            processing_time=round(processing_time, 3)
+            processing_time=round(processing_time, 3),
+            flag=flag
         )
         
     except HTTPException:
