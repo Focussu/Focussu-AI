@@ -13,10 +13,19 @@ import io
 from inference.pointnet import load_pointnet, predict
 from inference.random_forest import load_random_forest, predict_rf
 from datetime import datetime
+# LLaVA 라이브러리 임포트
+from LLaVA.llava.model.builder import load_pretrained_model
+from LLaVA.llava.constants import IMAGE_TOKEN_INDEX
+from LLaVA.llava.conversation import conv_templates
+from LLaVA.llava.mm_utils import process_images, tokenizer_image_token
+from sentence_transformers import SentenceTransformer, util
+import openai
+import shutil
 
 load_dotenv()
 
 API_SERVER_URL = os.getenv('API_SERVER_URL')
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 
 
 # Pydantic 모델 정의
@@ -47,6 +56,7 @@ class ScoreResponse(BaseModel):
     blendshape_score: float
     confidence: float
     processing_time: float
+    flag: bool
 
 class ErrorResponse(BaseModel):
     detail: str
@@ -115,8 +125,23 @@ async def image_upload(file: UploadFile = File(..., description="업로드할 �
         # 이미지 데이터 읽기
         contents = await file.read()
         
+        # 파일명에서 ticketNumber와 timestamp 추출 시도
+        try:
+            file_name = file.filename.split(".")[0]
+            ticketNumber, timestamp = file_name.split("_")
+            ticketNumber = int(ticketNumber)
+        except (ValueError, AttributeError, IndexError):
+            # 파일명이 예상 형식이 아닌 경우 기본값 사용
+            ticketNumber = 0
+            timestamp = "unknown"
+            print(f"파일명 '{file.filename}'이 예상 형식(ticketNumber_timestamp.확장자)이 아닙니다. 기본값을 사용합니다.")
+        
         # 파일 저장
-        file_path = DATA_DIR / file.filename
+        # ticketNumber별 디렉토리 생성
+        ticket_dir = DATA_DIR / str(ticketNumber)
+        ticket_dir.mkdir(exist_ok=True)  # 디렉토리가 없으면 생성
+        
+        file_path = ticket_dir / file.filename
         with open(file_path, "wb") as f:
             f.write(contents)
         
@@ -130,8 +155,154 @@ async def image_upload(file: UploadFile = File(..., description="업로드할 �
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+openai.api_key = OPENAI_API_KEY
+
+# ====== 모델 로드 ======
+print("Loading LLaVA model...")
+tokenizer, model, image_processor, context_len = load_pretrained_model(
+    model_path="/home/focussu/minji/Focussu-AI/src/LLaVA/checkpoints/llava-v1.5-7b",
+    model_base=None,
+    model_name="llava-v1.5-7b",
+    device_map="cuda",
+    load_8bit=True,
+    load_4bit=False
+)
+device = next(model.parameters()).device
+dtype = next(model.parameters()).dtype
+print(f"Model loaded on device: {device}, dtype: {dtype}")
+
+#app = FastAPI()
+
+# ====== 전역 템플릿 및 상수 ======
+conv_template = conv_templates["llava_v1"].copy()
+IMAGE_TOKEN_INDEX = tokenizer.convert_tokens_to_ids(["<image>"])[0]  # 필요한 경우 직접 설정
+base_prompt = (
+    "This is a frame taken from a video recorded every 10 seconds. "
+    "Please analyze the person's posture, gaze direction, and activity. "
+    "Evaluate their level of concentration and explain why you think so. "
+    "If the person seems distracted, suggest possible causes."
+)
 
 
+@app.post("/analyze")
+async def analyze_concentration(ticketNumber: int, userID: int):
+# async def analyze_concentration(files: List[UploadFile] = File(...)):
+    # try:
+    #     if len(files) == 0:
+    #         raise ValueError("이미지가 업로드되지 않았습니다.")
+
+    #     # 1. 이미지 전처리
+    #     image_tensor = process_uploaded_images(files)
+
+    #     # 2. 프롬프트 생성
+    #     prompts = [f"{base_prompt}\n\nThis is frame {i+1} in the sequence." for i in range(len(files))]
+
+    #     # 3. 텍스트 응답 생성
+    #     responses = generate_responses(image_tensor, prompts)
+
+    #     # 4. 중복 제거
+    #     unique_responses = deduplicate_responses(responses)
+
+    #     # 5. 번역 및 정리
+    #     translated = translate_with_gpt(unique_responses)
+
+        # Post (ticketNumber, content)
+        
+           # API 서버로 분석 결과 전송 (헤더 추가)
+        # headers = {
+        #     'Content-Type': 'application/json',
+        #     #'Authorization': f'Bearer {API_TOKEN}'  # Bearer 토큰 추가
+        # }
+        
+        # payload = {
+        #     "ticketNumber": ticketNumber,
+        #     "startTime": start_time_iso,
+        #     "endTime": end_time_iso,
+        #     "score": final_confidence
+        # }
+        
+        # response = requests.post(
+        #     f"{API_SERVER_URL}/ai-analysis", 
+        #     json=payload,  # json 파라미터 사용
+        #     headers=headers
+        # )
+        
+        # return response
+        # return {
+        #     "status": "success",
+        #     "result": translated,
+        #     "original": unique_responses
+        # }
+        return {
+            "status": "success",
+        }
+    # except Exception as e:
+    #     raise HTTPException(status_code=500, detail=str(e))
+
+
+# ====== 유틸 함수들 ======
+def process_uploaded_images(files: List[UploadFile]) -> torch.Tensor:
+    images = [Image.open(io.BytesIO(file.file.read())).convert("RGB") for file in files]
+    image_tensor = process_images(images, image_processor, model.config)
+    return image_tensor.to(device=device, dtype=dtype)
+
+
+def generate_responses(image_tensor_batch: torch.Tensor, prompts: List[str]) -> List[str]:
+    conv_batch = [conv_template.copy() for _ in prompts]
+    for conv, prompt in zip(conv_batch, prompts):
+        conv.messages = []
+        conv.append_message(conv.roles[0], prompt)
+        conv.append_message(conv.roles[1], None)
+
+    input_ids_batch = [
+        tokenizer_image_token(c.get_prompt(), tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt")
+        for c in conv_batch
+    ]
+    input_ids = torch.nn.utils.rnn.pad_sequence(input_ids_batch, batch_first=True, padding_value=tokenizer.pad_token_id).to(device)
+
+    with torch.no_grad():
+        output_ids = model.generate(
+            input_ids,
+            images=image_tensor_batch,
+            do_sample=False,
+            temperature=0.2,
+            max_new_tokens=256,
+            use_cache=True,
+            pad_token_id=tokenizer.eos_token_id
+        )
+
+    # 응답 디코딩
+    return [
+        tokenizer.decode(output_ids[i][input_ids.shape[1]:], skip_special_tokens=True).strip()
+        for i in range(output_ids.shape[0])
+    ]
+
+
+def deduplicate_responses(paragraphs: List[str], threshold: float = 0.85) -> List[str]:
+    model = SentenceTransformer("paraphrase-MiniLM-L6-v2")
+    embeddings = model.encode(paragraphs, convert_to_tensor=True)
+    unique_paragraphs = []
+
+    for i, emb in enumerate(embeddings):
+        if all(util.cos_sim(emb, model.encode([p], convert_to_tensor=True)).item() < threshold for p in unique_paragraphs):
+            unique_paragraphs.append(paragraphs[i])
+    return unique_paragraphs
+
+
+def translate_with_gpt(sentences: List[str]) -> str:
+    prompt = (
+        "다음 문장들은 영상 속 사람 한 명의 시간에 따른 집중도, 자세, 시선을 분석한 내용입니다.\n"
+        "이 문장들을 중복 없이 자연스럽게 한국어로 번역하고, 문맥이 어색한 부분이나 말이 이어지지 않는 부분은 자연스럽게 다듬어 주세요. 문장 앞에 넘버링은 매기지 말아주세요.\n\n"
+    )
+    joined = "\n".join(f"{i+1}. {s}" for i, s in enumerate(sentences))
+
+    response = openai.ChatCompletion.create(
+        model="gpt-4",
+        messages=[{"role": "user", "content": prompt + joined}],
+        temperature=0.2,
+    )
+    return response.choices[0].message["content"].strip()
 
 @app.post("/ai/score",
           summary="얼굴 분석 및 예측",
@@ -216,12 +387,13 @@ async def get_score(request: ScorePredictionRequest):
             headers=headers
         )
         print(response)
-        
+        flag = True
         return ScoreResponse(
             landmark_score=landmark_score,
             blendshape_score=blendshape_score,
             confidence=float(final_confidence),
-            processing_time=round(processing_time, 3)
+            processing_time=round(processing_time, 3),
+            flag=flag
         )
         
     except HTTPException:
