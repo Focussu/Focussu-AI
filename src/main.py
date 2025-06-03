@@ -2,6 +2,8 @@ from fastapi import FastAPI, HTTPException, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
+from tqdm import tqdm
+
 import os
 from pathlib import Path
 import torch
@@ -261,7 +263,7 @@ async def analyze_concentration(ticketNumber: int, userID: int):
         # 2. 배치로 나눠 처리
         all_responses = []
         num_images = image_tensor.shape[0]
-        for i in range(0, num_images, BATCH_SIZE):
+        for i in tqdm(range(0, num_images, BATCH_SIZE)):
             image_batch = image_tensor[i:i+BATCH_SIZE]
             prompts = make_prompts(i, min(i + BATCH_SIZE, num_images))
             batch_responses = generate_responses(image_batch, prompts)
@@ -282,15 +284,16 @@ async def analyze_concentration(ticketNumber: int, userID: int):
         
         payload = {
             "ticketNumber": ticketNumber,
-            "userID": userID,
+            # "userID": userID,
             "content": translated,
         }
         
-        requests.post(
+        response = requests.post(
             f"{API_SERVER_URL}/analysis-document", 
             json=payload,  # json 파라미터 사용
             headers=headers
         )
+        print(response)
         
         return {
             "status": "success",
